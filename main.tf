@@ -143,13 +143,7 @@ resource "aws_db_instance" "postgres" {
 
 # ---------------- User Data ----------------
 
-data "template_file" "userdata" {
-  template = file("userdata.sh")
 
-  vars = {
-    RDS_ENDPOINT = aws_db_instance.postgres.address
-  }
-}
 
 # ---------------- EC2 ----------------
 resource "aws_key_pair" "terraform_key" {
