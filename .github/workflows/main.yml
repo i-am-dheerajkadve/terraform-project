@@ -1,0 +1,48 @@
+name: Deploy Infra with terraform 
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+
+    steps:
+
+    # 🔹 1. Checkout
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    # 🔹 2. Setup Terraform
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+
+    # 🔹 3. Configure AWS
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v3
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    # 🔹 4. Terraform Init
+    - name: Terraform Init
+      run: terraform init
+
+    # 🔹 5. Terraform Validate
+    - name: Terraform Validate
+      run: terraform validate
+
+    # 🔹 6. Terraform Plan
+    - name: Terraform Plan
+      run: terraform plan
+
+    # 🔹 7. Terraform Apply
+    - name: Terraform Apply
+      run: terraform apply -auto-approve
+
+    
+
+      
