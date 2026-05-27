@@ -148,7 +148,7 @@ resource "aws_db_instance" "postgres" {
 # ---------------- EC2 ----------------
 resource "aws_key_pair" "terraform_key" {
   key_name   = "terraform-key"
-  public_key = file("${path.module}/terraform-key.pub")
+  public_key = file("${path.module}/terraform-key")
 }
 
 resource "aws_instance" "app_server" {
