@@ -5,12 +5,25 @@ on:
     branches:
       - main
 
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "apply or destroy"
+        required: true
+        default: "apply"
+
 jobs:
   terraform:
     runs-on: ubuntu-latest
 
-    steps:
+    permissions:
+      id-token: write
+      contents: read
 
+    env:
+      ACTION: ${{ github.event.inputs.action || 'apply' }}
+
+    steps:
       # 🔹 1. Checkout
       - name: Checkout code
         uses: actions/checkout@v3
@@ -37,11 +50,17 @@ jobs:
 
       # 🔹 6. Terraform Plan
       - name: Terraform Plan
+        if: env.ACTION == 'apply'
         run: terraform plan
 
       # 🔹 7. Terraform Apply
       - name: Terraform Apply
+        if: env.ACTION == 'apply'
         run: terraform apply -auto-approve
+
+      - name: Terraform Destroy
+        if: env.ACTION == 'destroy'
+        run: terraform destroy -auto-approve
 
       # 🔹 8. Get EC2 IP
       - name: Get EC2 IP
@@ -58,7 +77,6 @@ jobs:
       # 🔹 11. SSH into EC2 and Deploy
       - name: Deploy on EC2
         uses: appleboy/ssh-action@v1.0.3
-
         with:
           host: ${{ env.EC2_IP }}
           username: ubuntu
@@ -66,7 +84,6 @@ jobs:
           envs: RDS_ENDPOINT
 
           script: |
-
             sudo apt update -y
             sudo apt install docker.io -y
 
@@ -120,3 +137,28 @@ jobs:
 
             # ---------------- RUN ----------------
             sudo docker-compose up -d
+
+  destroy:
+    needs: terraform
+    runs-on: ubuntu-latest
+    if: failure()
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Destroy
+        run: terraform destroy -auto-approve
