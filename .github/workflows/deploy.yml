@@ -11,114 +11,112 @@ jobs:
 
     steps:
 
-    # 🔹 1. Checkout
-    - name: Checkout code
-      uses: actions/checkout@v3
+      # 🔹 1. Checkout
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    # 🔹 2. Setup Terraform
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
+      # 🔹 2. Setup Terraform
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
 
-    # 🔹 3. Configure AWS
-    - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v3
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ secrets.AWS_REGION }}
+      # 🔹 3. Configure AWS
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-    # 🔹 4. Terraform Init
-    - name: Terraform Init
-      run: terraform init
+      # 🔹 4. Terraform Init
+      - name: Terraform Init
+        run: terraform init
 
-    # 🔹 5. Terraform Validate
-    - name: Terraform Validate
-      run: terraform validate
+      # 🔹 5. Terraform Validate
+      - name: Terraform Validate
+        run: terraform validate
 
-    # 🔹 6. Terraform Plan
-    - name: Terraform Plan
-      run: terraform plan
+      # 🔹 6. Terraform Plan
+      - name: Terraform Plan
+        run: terraform plan
 
-    # 🔹 7. Terraform Apply
-    - name: Terraform Apply
-      run: terraform apply -auto-approve
-      
+      # 🔹 7. Terraform Apply
+      - name: Terraform Apply
+        run: terraform apply -auto-approve
 
-    # 🔹 8. Get EC2 IP
-    - name: Get EC2 IP
-      run: echo "EC2_IP=$(terraform output -raw ec2_public_ip)" >> $GITHUB_ENV
+      # 🔹 8. Get EC2 IP
+      - name: Get EC2 IP
+        run: echo "EC2_IP=$(terraform output -raw ec2_public_ip)" >> $GITHUB_ENV
 
-    # 🔹 9. Get RDS Endpoint
-    - name: Get RDS Endpoint
-      run: echo "RDS_ENDPOINT=$(terraform output -raw rds_endpoint)" >> $GITHUB_ENV
+      # 🔹 9. Get RDS Endpoint
+      - name: Get RDS Endpoint
+        run: echo "RDS_ENDPOINT=$(terraform output -raw rds_endpoint)" >> $GITHUB_ENV
 
-    # 🔹 10. Wait for EC2
-    - name: Wait for EC2 boot
-      run: sleep 60
+      # 🔹 10. Wait for EC2
+      - name: Wait for EC2 boot
+        run: sleep 60
 
-    # 🔹 11. SSH into EC2 and Deploy
-    - name: Deploy on EC2
-      uses: appleboy/ssh-action@v1.0.3
+      # 🔹 11. SSH into EC2 and Deploy
+      - name: Deploy on EC2
+        uses: appleboy/ssh-action@v1.0.3
 
-      with:
-        host: ${{ env.EC2_IP }}
-        username: ubuntu
-        key: ${{ secrets.EC2_SSH_KEY }}
+        with:
+          host: ${{ env.EC2_IP }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: RDS_ENDPOINT
 
-        # 🔥 IMPORTANT FIX: pass variable properly
-        envs: RDS_ENDPOINT
+          script: |
 
-        script: |
+            sudo apt update -y
+            sudo apt install docker.io -y
 
-          sudo apt update -y
-          sudo apt install docker.io -y
-          sudo systemctl start docker
-          sudo systemctl enable docker
+            sudo systemctl start docker
+            sudo systemctl enable docker
 
-          # Install Docker Compose
-          sudo curl -L "https://github.com/docker/compose/releases/download/v2.27.0/docker-compose-linux-x86_64" \
-          -o /usr/local/bin/docker-compose
+            # Install Docker Compose
+            sudo curl -L "https://github.com/docker/compose/releases/download/v2.27.0/docker-compose-linux-x86_64" -o /usr/local/bin/docker-compose
 
-          sudo chmod +x /usr/local/bin/docker-compose
+            sudo chmod +x /usr/local/bin/docker-compose
 
-          mkdir -p ~/app
-          cd ~/app
+            mkdir -p ~/app
+            cd ~/app
 
-          # ---------------- .env file ----------------
-          cat > .env <<EOF
-          DB_HOST=${RDS_ENDPOINT}
-          DB_PORT=5432
-          DB_NAME=appdb
-          DB_USER=postgres
-          DB_PASSWORD=postgres123
-          REACT_APP_API_URL=http://backend:8080
-          EOF
+            # ---------------- .env file ----------------
+            cat > .env <<EOF
+            POSTGRES_USER=postgres
+            POSTGRES_PASSWORD=postgres123
+            POSTGRES_DB=appdb
+            SPRING_DATASOURCE_URL=jdbc:postgresql://${RDS_ENDPOINT}:5432/appdb
+            SPRING_DATASOURCE_USERNAME=postgres
+            SPRING_DATASOURCE_PASSWORD=postgres123
+            VITE_API_URL=http://localhost:8080
+            EOF
 
-          # ---------------- docker-compose ----------------
-          cat > docker-compose.yml <<EOF
-          version: '3.8'
+            # ---------------- docker-compose ----------------
+            cat > docker-compose.yml <<EOF
+            version: '3.8'
 
-          services:
+            services:
 
-            backend:
-              image: harshjswl/k8s-backend
-              container_name: backend
-              ports:
-                - "8080:8080"
-              env_file:
-                - .env
-              restart: always
+              backend:
+                image: harshjswl/k8s-backend
+                container_name: backend-service
+                ports:
+                  - "8080:8080"
+                env_file:
+                  - .env
+                restart: always
 
-            frontend:
-              image: harshjswl/k8s-frontend
-              container_name: frontend
-              ports:
-                - "3000:80"
-              depends_on:
-                - backend
-              restart: always
+              frontend:
+                image: harshjswl/k8s-frontend
+                container_name: frontend
+                ports:
+                  - "3000:80"
+                depends_on:
+                  - backend
+                restart: always
 
-          EOF
+            EOF
 
-          # ---------------- RUN ----------------
-          sudo docker compose up -d
+            # ---------------- RUN ----------------
+            sudo docker compose up -d
