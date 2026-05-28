@@ -35,15 +35,18 @@ resource "aws_subnet" "public" {
 
 # ---------------- Private Subnet ----------------
 
-resource "aws_subnet" "private" {
+resource "aws_subnet" "private_1" {
   vpc_id            = aws_vpc.main.id
-  cidr_block        = var.private_subnet_cidr
-  availability_zone = "ap-south-1b"
-
-  tags = {
-    Name = "private-subnet"
-  }
+  cidr_block        = "10.0.2.0/24"
+  availability_zone = "ap-south-1a"
 }
+
+resource "aws_subnet" "private_2" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.3.0/24"
+  availability_zone = "ap-south-1b"
+}
+
 
 # ---------------- Route Table ----------------
 
@@ -69,43 +72,43 @@ resource "aws_security_group" "project_sg" {
   vpc_id = aws_vpc.main.id
 
   ingress {
-    from_port = 22
-    to_port   = 22
-    protocol  = "tcp"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {
-    from_port = 3000
-    to_port   = 3000
-    protocol  = "tcp"
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
   ingress {
-    from_port = 443
-    to_port   = 443
-    protocol  = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    from_port = 8080
-    to_port   = 8080
-    protocol  = "tcp"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {
-    from_port = 5432
-    to_port   = 5432
-    protocol  = "tcp"
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
     cidr_blocks = [var.vpc_cidr]
   }
 
   egress {
-    from_port = 0
-    to_port   = 0
-    protocol  = "-1"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
@@ -116,25 +119,27 @@ resource "aws_db_subnet_group" "db_subnet" {
   name = "db-subnet-group"
 
   subnet_ids = [
-    aws_subnet.private.id
+    aws_subnet.private_1.id,
+    aws_subnet.private_2.id
   ]
 }
 
 # ---------------- RDS PostgreSQL ----------------
 
 resource "aws_db_instance" "postgres" {
-  allocated_storage    = 20
-  engine               = "postgres"
-  engine_version       = "15"
-  instance_class       = "db.t3.micro"
+  allocated_storage = 20
+  engine            = "postgres"
+  engine_version    = "15"
+  instance_class    = "db.t3.micro"
+  storage_type      = "gp2"
 
-  db_name              = "appdb"
+  db_name = "appdb"
 
-  username             = var.db_username
-  password             = var.db_password
+  username = var.db_username
+  password = var.db_password
 
-  publicly_accessible  = false
-  skip_final_snapshot  = true
+  publicly_accessible = false
+  skip_final_snapshot = true
 
   vpc_security_group_ids = [aws_security_group.project_sg.id]
 
@@ -143,20 +148,26 @@ resource "aws_db_instance" "postgres" {
 
 # ---------------- User Data ----------------
 
+# data "template_file" "userdata" {
+#   template = file("userdata.sh")
 
+#   vars = {
+#     RDS_ENDPOINT = aws_db_instance.postgres.address
+#   }
+# }
 
 # ---------------- EC2 ----------------
 resource "aws_key_pair" "terraform_key" {
-  key_name   = "terraform-key"
-  public_key = file("${path.module}/terraform-key")
+  key_name   = "terraform-key.pub"
+  public_key = file("${path.module}/terraform-key.pub")
 }
 
 resource "aws_instance" "app_server" {
 
-  ami                    = var.ami
-  instance_type          = var.instance_type
+  ami           = var.ami
+  instance_type = var.instance_type
 
-  subnet_id              = aws_subnet.public.id
+  subnet_id = aws_subnet.public.id
 
   vpc_security_group_ids = [aws_security_group.project_sg.id]
 
@@ -164,11 +175,15 @@ resource "aws_instance" "app_server" {
 
   associate_public_ip_address = true
 
-#   user_data = replace(
-#   file("userdata.sh"),
-#   "RDS_ENDPOINT",
-#   aws_db_instance.postgres.address
-#)
+  #   user_data = replace(
+  #   file("userdata.sh"),
+  #   "RDS_ENDPOINT",
+  #   aws_db_instance.postgres.address
+  #)
+  user_data = templatefile("${path.module}/userdata.sh", {
+    #   RDS_ENDPOINT = aws_db_instance.postgres.address
+    #   EC2_IP       = aws_instance.app_server.public_ip
+  })
 
   tags = {
     Name = "docker-server"
